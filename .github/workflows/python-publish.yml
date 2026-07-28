@@ -1,0 +1,257 @@
+# This worimport json
+import sqlite3
+import pandas as pd
+import streamlit as st
+
+# Page Configuration
+st.set_page_config(
+    page_title="ပ အမှတ် နှင့် အမှုတွဲ မှတ်တမ်းစနစ်",
+    page_icon="🛡️",
+    layout="wide",
+)
+
+# Initialize SQLite Database
+conn = sqlite3.connect("police_cases.db", check_same_thread=False)
+c = conn.cursor()
+c.execute("""
+    CREATE TABLE IF NOT EXISTS cases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        region TEXT,
+        district TEXT,
+        township TEXT,
+        station TEXT,
+        case_no TEXT,
+        crime_type TEXT,
+        section TEXT,
+        date TEXT,
+        incident_date TEXT,
+        officer TEXT,
+        complainant TEXT,
+        accused TEXT,
+        accused_status TEXT,
+        nrc TEXT,
+        phone TEXT,
+        address TEXT,
+        status TEXT,
+        details TEXT,
+        is_trashed INTEGER DEFAULT 0
+    )
+""")
+conn.commit()
+
+# Sidebar / Form Section
+st.sidebar.header("🛡️ ပ အမှတ် / အမှုတွဲ ပုံစံ")
+
+with st.sidebar.form("case_form", clear_on_submit=True):
+  region = st.text_input("တိုင်းဒေသကြီး/ပြည်နယ်", "နေပြည်တော်")
+  district = st.text_input("ခရိုင်", "ဥတ္တရခရိုင်")
+  township = st.text_input("မြို့နယ်", "ပျဉ်းမနား")
+  station = st.text_input("ရဲစခန်းအမည်", "ပျဉ်းမနားစခန်း")
+  case_no = st.text_input("ပ အမှတ် (ခုနှစ်)", "ပ ၁၂/၂၀၂၆")
+
+  crime_type = st.text_input("ပြစ်မှုအမျိုးအစား", "ခိုးမှု")
+  section = st.text_input("ကျူးလွန်သဖြင့်ပုဒ်မ", "၃၇၉")
+
+  date = st.date_input("အမှုဖွင့်ရက်စွဲ")
+  incident_date = st.text_input("အမှုဖြစ်ပွားချိန် (ဥပမာ- ရက်စွဲ/အချိန်)")
+
+  officer = st.text_input("စစ်ဆေးမည့်အရာရှိ (IO)")
+  complainant = st.text_input("တရားလို အမည်")
+  accused = st.text_input("တရားခံ အမည်")
+  accused_status = st.selectbox(
+      "တရားခံ အခြေအနေ", ["ဖမ်းမိ", "လွတ်မြောက်", "ဝရမ်းထုတ်", "ခံဝန်ဖြင့်လွှတ်"]
+  )
+
+  nrc = st.text_input("မှတ်ပုံတင်အမှတ် (NRC)")
+  phone = st.text_input("ဆက်သွယ်ရမည့်ဖုန်း")
+  address = st.text_area("နေရပ်လိပ်စာ")
+
+  status = st.selectbox(
+      "အမှုတွဲအခြေအနေ",
+      ["စစ်ဆေးဆဲ", "တရားစွဲတင်", "တရားခံပြေး", "ပြီးပြတ်/ပိတ်"],
+  )
+  details = st.text_area("အမှုဖြစ်စဉ်အကျဉ်း / မှတ်ချက်")
+
+  submit_button = st.form_submit_button(label="မှတ်တမ်းသိမ်းမည်")
+
+  if submit_button:
+    c.execute(
+        """
+            INSERT INTO cases (region, district, township, station, case_no, crime_type, section, date, incident_date, officer, complainant, accused, accused_status, nrc, phone, address, status, details, is_trashed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        """,
+        (
+            region,
+            district,
+            township,
+            station,
+            case_no,
+            crime_type,
+            section,
+            str(date),
+            incident_date,
+            officer,
+            complainant,
+            accused,
+            accused_status,
+            nrc,
+            phone,
+            address,
+            status,
+            details,
+        ),
+    )
+    conn.commit()
+    st.sidebar.success("မှတ်တမ်း အသစ်သိမ်းဆည်းပြီးပါပြီ။")
+
+# Main Content Dashboard
+st.title("📊 အမှုတွဲများ ကြီးကြပ်ကွပ်ကဲမှု Dashboard (Python / Streamlit)")
+
+# Fetch Data
+df = pd.read_sql("SELECT * FROM cases", conn)
+
+if not df.empty:
+  # Metrics Row
+  total_cases = len(df[df["is_trashed"] == 0])
+  investigating = len(
+      df[(df["status"] == "စစ်ဆေးဆဲ") & (df["is_trashed"] == 0)]
+  )
+  court = len(
+      df[(df["status"] == "တရားစွဲတင်") & (df["is_trashed"] == 0)]
+  )
+  absconder = len(
+      df[(df["status"] == "တရားခံပြေး") & (df["is_trashed"] == 0)]
+  )
+  closed = len(
+      df[(df["status"] == "ပြီးပြတ်/ပိတ်") & (df["is_trashed"] == 0)]
+  )
+
+  col1, col2, col3, col4, col5 = st.columns(5)
+  col1.metric("စုစုပေါင်း", total_cases)
+  col2.metric("စစ်ဆေးဆဲ", investigating)
+  col3.metric("တရားစွဲတင်", court)
+  col4.metric("တရားခံပြေး", absconder)
+  col5.metric("ပြီးပြတ်", closed)
+
+  st.markdown("---")
+
+  # Search & Filter
+  search_query = st.text_input(
+      "🔍 အဓိက ရှာဖွေရေးဘောက်စ် (ပ အမှတ်၊ စခန်း၊ ပြစ်မှု စသည်ဖြင့်)..."
+  )
+
+  filtered_df = df[df["is_trashed"] == 0]
+  if search_query:
+    filtered_df = filtered_df[
+        filtered_df.apply(
+            lambda row: row.astype(str).str.contains(search_query, case=False).any(),
+            axis=1,
+        )
+    ]
+
+  # Display Records Table
+  st.subheader("📋 အမှုတွဲများ စာရင်း")
+  st.dataframe(
+      filtered_df[
+          [
+              "id",
+              "region",
+              "township",
+              "station",
+              "case_no",
+              "crime_type",
+              "section",
+              "date",
+              "complainant",
+              "accused",
+              "status",
+          ]
+      ],
+      use_container_width=True,
+  )
+
+  # Analytics Charts
+  st.markdown("---")
+  col_a, col_b = st.columns(2)
+  with col_a:
+    st.subheader("အမှုအအနေအထား ဇယား")
+    status_counts = filtered_df["status"].value_counts()
+    st.bar_chart(status_counts)
+
+  with col_b:
+    st.subheader("အဖြစ်များသော ပြစ်မှုများ")
+    crime_counts = filtered_df["crime_type"].value_counts()
+    st.bar_chart(crime_counts)
+
+else:
+  st.info("လက်လွှဲမှတ်တမ်းများ မရှိသေးပါ။ ဘယ်ဘက်ခြမ်းမှ အချက်အလက်များ ဖြည့်သွင်းပါ။")
+  kflow will upload a Python Package to PyPI when a release is created
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+name: Upload Python Package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  release-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Build release distributions
+        run: |
+          # NOTE: put your own distribution build steps here.
+          python -m pip install build
+          python -m build
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+  pypi-publish:
+    runs-on: ubuntu-latest
+    needs:
+      - release-build
+    permissions:
+      # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write
+
+    # Dedicated environments with protections for publishing are strongly recommended.
+    # For more information, see: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules
+    environment:
+      name: pypi
+      # OPTIONAL: uncomment and update to include your PyPI project URL in the deployment status:
+      # url: https://pypi.org/p/YOURPROJECT
+      #
+      # ALTERNATIVE: if your GitHub Release name is the PyPI project version string
+      # ALTERNATIVE: exactly, uncomment the following line instead:
+      # url: https://pypi.org/project/YOURPROJECT/${{ github.event.release.name }}
+
+    steps:
+      - name: Retrieve release distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+      - name: Publish release distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
